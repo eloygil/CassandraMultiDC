@@ -35,8 +35,8 @@ function usage () {
 }
 
 function get_running_clusters () {
+    # Finds LSF jobs related to Cassandra clusters and prints details about jobs and datacenter status.
     RUNNING_JOBS=""
-    # Finds LSF jobs related to Cassandra clusters.
     BJOBS=$(bjobs -noheader | awk '{ print $3 $7 }' | sed '/^\s*$/d')     # List of STATEJOBID information like: RUN11234567
     for line in $BJOBS
     do
