@@ -1,14 +1,13 @@
 #!/bin/bash
 iface="ib0" # still unused, it will be received as argument and change the seeds and interface used in conf/cassandra.yaml
 
-JOB_NAME=${1}
+JOBNAME=${1}
 DC=${2}
 N_NODES=${3}
 
 CASS_HOME=$HOME/cassandra-dc
-SSD_MOUNT_POINT=/tmp # This will be replaced by the user's own SSD scratch path assigned
-SEEDS_FILE_DC1=seeds/$JOB_NAME-1.txt
-SEEDS_FILE_DC2=seeds/$JOB_NAME-2.txt
+SEEDS_FILE_DC1=seeds/$JOBNAME-1.txt
+SEEDS_FILE_DC2=seeds/$JOBNAME-2.txt
 
 DATA_HOME=/tmp/cassandra-data-tmp-e
 COMM_HOME=/tmp/cassandra-commitlog
@@ -68,7 +67,7 @@ do
         hostlist=$hostlist" "$host
     fi  
 done
-echo $hostlist > seeds/$JOB_NAME-$DC.txt
+echo $hostlist > seeds/$JOBNAME-$DC.txt
 # Wait 20 seconds to get the seeds, else, timeout
 sleep 20
 
@@ -78,7 +77,7 @@ if [ ! -f $SEEDS_FILE_DC1 ] || [ ! -f $SEEDS_FILE_DC2 ]; then
 else
     echo "Seeds files OK."
 fi
-HOST_LIST=$(cat $SEEDS_FILE_DC1) $(cat $SEEDS_FILE_DC2)
+HOST_LIST="$(cat $SEEDS_FILE_DC1) $(cat $SEEDS_FILE_DC2)"
 
 seeds=`echo $HOST_LIST | sed "s/ /-ib0,/g"`
 seeds=$seeds-$iface #using only infiniband atm, will change later
@@ -94,7 +93,7 @@ for u_host in $hostlist
 do
     ((NODE_COUNT++))
     # Clearing data from previous executions and checking symlink coherence
-    blaunch $u_host "bash $HOME/cassandraDC4juron/dc-set.sh $DC $JOBNAME $SSD_MOUNT_POINT $CASS_HOME $NODE_COUNT"
+    blaunch $u_host "bash $HOME/cassandraDC4juron/dc-set.sh $DC $JOBNAME $CASS_HOME $NODE_COUNT"
 
     #if [ "$(cat $RECOVER_FILE)" != "" ]
     #then

@@ -14,7 +14,8 @@ N_NODES_FILE=cassandradc-num-nodes.txt
 RECOVER_FILE=cassandradc-recover-file.txt
 JOB_DB_FILE=jobs.db
 RETRY_MAX=12
-DC2_N_HOSTS=4 #Hardcoded
+#DC2_N_HOSTS=4 #Hardcoded
+DC2_N_HOSTS=2 #while testing
 
 function usage () {
     # Prints a help message
@@ -31,6 +32,42 @@ function usage () {
     echo " "
     echo "       KILL [ jobname ]:"
     echo "       Kills the clusters associated with that job name, if given, else shows a list of running jobs."
+}
+
+function get_running_clusters () {
+    RUNNING_JOBS=""
+    # Finds LSF jobs related to Cassandra clusters.
+    BJOBS=$(bjobs -noheader | awk '{ print $3 $7 }' | sed '/^\s*$/d')     # List of STATEJOBID information like: RUN11234567
+    for line in $BJOBS
+    do
+        if [ "$(echo $line | cut -c -3)" == "RUN" ] && [ "$(echo $line | cut -c 4)" == "1" ]  # Filtering to get RUNNING and DC1
+        then
+            RUN_JOBID=$(echo $line | cut -c 5-)
+            if [ "$(echo $BJOBS | grep "RUN2"$RUN_JOBID)" != "" ] && [ "$(cat $JOB_DB_FILE | grep $RUN_JOBID | sed 's/ //g')" == "$RUN_JOBID" ]      # Its DC2 is RUN & in jobs.db
+            then
+                RUNNING_JOBS="$RUNNING_JOBS $RUN_JOBID"                     # Adding JOB ID to the Cassandra running jobs list
+            fi
+        fi
+    done
+    if [ "$RUNNING_JOBS" != "" ]
+    then
+        for job in $RUNNING_JOBS
+        do
+            echo " "
+            echo "CLUSTER JOB NAME: "$job                                                
+            echo "###########################################################################################################"
+            echo "Datacenter dc1 job details:"
+            bjobs -J 1$job
+            echo "Datacenter dc2 job details:"
+            bjobs -J 2$job
+            $CASS_HOME/bin/nodetool -h $(bjobs -noheader | grep 1$job | awk '{ print $6 }' | cut -c 4-) status  
+            echo "###########################################################################################################"
+            echo " "
+        done
+    else
+        echo "No running jobs related with DC1/DC2 Cassandra clusters found"
+        bjobs
+    fi
 }
 
 function get_job_info () {
@@ -120,7 +157,7 @@ function set_run_parameters() {
         while [ "$(cat $JOB_DB_FILE | grep $JOBNAME)" != "" ]
         do
             JOBNAME=$(date "+%y%m%d")$N
-            $(($N+1))
+            N=$(($N+1))
         done
     fi
     if [ "$(echo $JOBNAME | cut -c -9)" != "$JOBNAME" ]
@@ -130,14 +167,21 @@ function set_run_parameters() {
         exit
     fi
     # The number of nodes is 4 by default
-    if [ "${2}" != "-j" ] && [ "${2}" != "" ]
+    if [ "$OPTION" != "-j" ] && [ "$OPTION" != "" ]
     then
-        N_NODES=${2}
+        N_NODES=$OPTION
     elif [ "$N_NODES" == "" ]
     then
         N_NODES=4
     fi
 }
+
+if [ "$ACTION" == "TEST" ] || [ "$ACTION" == "test" ]
+then
+    get_running_clusters
+    exit
+fi
+
 
 if [ "$ACTION" == "RUN" ] || [ "$ACTION" == "run" ]
 then
@@ -145,8 +189,9 @@ then
     #test_if_cluster_up
     # Starts a Cassandra Clusters
     echo "Starting Cassandra Clusters (Job ID: "$JOBNAME")"
-    echo $N_NODES > $N_NODES_FILE
 
+    echo "#DC1 nodes: "$N_NODES
+    echo "#DC2 nodes: "$DC2_N_HOSTS
     # Since this is a fresh launch, it assures that the recover file is empty
     #echo "" > $RECOVER_FILE
 
@@ -156,14 +201,10 @@ then
     # Adding job to job database
     echo " $JOBNAME" >> $JOB_DB_FILE
 
-    bsub -J 1$JOBNAME -n $((19 * $N_NODES)) -W 20 -R span[ptile=19] -oo logs/$JOBNAME-DC1-%J.out -eo logs/$JOBNAME-DC1-%J.err "bash cass.sh $JOBNAME 1 $N_NODES"
-    
-    # Creating the necessary GPFS data directories for Datacenter 2 (DC2)
-    #mkdir -p $CASS_HOME/DC2-data
-    #mkdir -p $CASS_HOME/DC2-data/$JOBNAME
-    #for ((i = 1; i <= DC2_N_HOSTS; i++)); do mkdir -p $CASS_HOME/DC2-data/$JOBNAME/node$i; done
-
-    bsub -J 2$JOBNAME -n $((19 * $DC2_N_HOSTS)) -W 20 -R span[ptile=19] -oo logs/$JOBNAME-DC2-%J.out -eo logs/$JOBNAME-DC2-%J.err "bash cass.sh $JOBNAME 2 $DC2_N_HOSTS"
+    # Launching job for Datacenter1 (over SSD)
+    bsub -J "1$JOBNAME" -n $((19 * $N_NODES)) -W 20 -R span[ptile=19] -oo logs/$JOBNAME-DC1-%J.out -eo logs/$JOBNAME-DC1-%J.err "bash cass.sh $JOBNAME 1 $N_NODES"
+    # Launching job for Datacenter2 (over GPFS)
+    bsub -J "2$JOBNAME" -n $((19 * $DC2_N_HOSTS)) -W 20 -R span[ptile=19] -oo logs/$JOBNAME-DC2-%J.out -eo logs/$JOBNAME-DC2-%J.err "bash cass.sh $JOBNAME 2 $DC2_N_HOSTS"
 
     #echo "Please, be patient. It may take a while until it shows a correct STATUS (and it may show some harmless errors during this process)."
     #RETRY_COUNTER=0
