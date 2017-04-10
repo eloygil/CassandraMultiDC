@@ -91,7 +91,7 @@ function get_cluster_ips () {
 
 function exit_no_cluster () {
     # Any Cassandra cluster is running. Exit.
-    echo "There is not a Cassandra cluster running. Exiting..."
+    echo "There is not a Cassandra cluster named <"$OPTION"> running. Exiting..."
     exit
 }
 
@@ -225,8 +225,7 @@ then
     # Starts a Cassandra Clusters
     echo "Starting Cassandra Clusters (Job ID: "$JOBNAME")"
 
-    echo "#DC1 nodes: "$N_NODES
-    echo "#DC2 nodes: "$DC2_N_HOSTS
+    echo "#DC1 nodes: "$N_NODES "| #DC2 nodes: "$DC2_N_HOSTS
     # Since this is a fresh launch, it assures that the recover file is empty
     #echo "" > $RECOVER_FILE
 
@@ -297,15 +296,24 @@ then
 elif [ "$ACTION" == "KILL" ] || [ "$ACTION" == "kill" ]
 then
     # If there is a running Cassandra Cluster with the given Job ID it kills it, otherwise it shows a list of running clusters
-    get_job_info
-    if [ "$JOB_ID" != "" ]
+    if [ "$OPTION" != "" ]
     then
-        bkill $JOB_ID
-        echo "It will take a while to complete the shutdown..." 
-        sleep 5
-        echo "Done."
+        get_job_info
+        if [ "$JOB_ID_1" != "" ]
+        then
+            bkill $JOB_ID_1
+            bkill $JOB_ID_2
+            echo "It will take a while to complete the shutdown..." 
+            sleep 5
+            echo "Done."
+        else
+            exit_no_cluster
+        fi
     else
-        exit_no_cluster
+        # No ID given, showing running clusters...
+        echo "INFO: No ID given, showing running clusters: "
+        get_running_clusters
+        exit
     fi
 elif [ "$ACTION" == "-H" ] || [ "$ACTION" == "-h" ]
 then
