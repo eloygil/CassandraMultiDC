@@ -114,32 +114,6 @@ function test_if_cluster_up () {
     fi
 }
 
-function get_nodes_up () {
-    get_job_info
-    if [ "$JOB_ID" != "" ]
-    then
-        if [ "$JOB_STATUS" == "RUN" ]
-        then    
-            get_cluster_node 
-            NODE_STATE_LIST=`$CASS_HOME/bin/nodetool -h $NODE_ID status | sed 1,5d | sed '$ d' | awk '{ print $1 }'`
-            if [ "$NODE_STATE_LIST" != "" ]
-            then
-                NODE_COUNTER=0
-                for state in $NODE_STATE_LIST
-                do  
-                    if [ $state != "UN" ]
-                    then
-                        RETRY_COUNTER=$(($RETRY_COUNTER+1))
-                        break
-                    else
-                        NODE_COUNTER=$(($NODE_COUNTER+1))
-                    fi
-                done
-            fi
-        fi
-    fi
-}
-
 function set_run_parameters() {
     # If the jobname DB does not exist, it is created
     if [ ! -f $JOB_DB_FILE ]
@@ -181,7 +155,7 @@ function set_run_parameters() {
 function get_dc_status () {
     NODE_STATE_LIST=`$CASS_HOME/bin/nodetool -h $NODE_ID status | grep ack | awk '{ print $1 }'`
     SWITCH_STATUS="ON"
-    if [ "$NODE_STATE_LIST" == "" ]
+    if [ "$NODE_STATE_LIST" == "" ] && [ "$ACTION" != "RUN" ]
     then
         echo "ERROR: No status found. The Cassandra Cluster may be still bootstrapping. Try again later."
         exit
@@ -199,8 +173,10 @@ function get_dc_status () {
             fi
         elif [ "$state" != "UN" ]
         then
-            echo "E1"
-            exit_bad_node_status
+            if [ "$ACTION" != "RUN" ]; then
+                echo "E1"
+                exit_bad_node_status
+            fi
         elif [ "$SWITCH_STATUS" == "OFF" ]
         then
             NODE_COUNTER_1=$(($NODE_COUNTER_1+1))
@@ -210,13 +186,6 @@ function get_dc_status () {
         fi
     done
 }
-
-if [ "$ACTION" == "TEST" ] || [ "$ACTION" == "test" ]
-then
-    get_running_clusters
-    exit
-fi
-
 
 if [ "$ACTION" == "RUN" ] || [ "$ACTION" == "run" ]
 then
@@ -240,20 +209,24 @@ then
     # Launching job for Datacenter2 (over GPFS)
     bsub -J "2$JOBNAME" -n $((19 * $DC2_N_HOSTS)) -W 20 -R span[ptile=19] -oo logs/$JOBNAME-DC2-%J.out -eo logs/$JOBNAME-DC2-%J.err "bash cass.sh $JOBNAME 2 $DC2_N_HOSTS"
 
-    #echo "Please, be patient. It may take a while until it shows a correct STATUS (and it may show some harmless errors during this process)."
-    #RETRY_COUNTER=0
-    #sleep 10
-    #while [ "$NODE_COUNTER" != "$N_NODES" ] && [ $RETRY_COUNTER -lt $RETRY_MAX ]; do
-    #    echo "Checking..."
-    #    sleep 3
-    #	get_nodes_up
-    #done
-    #if [ "$NODE_COUNTER" == "$N_NODES" ]
-    #then
-    #    echo "Cassandra Cluster with "$N_NODES" nodes started successfully."
-    #else
-    #    echo "ERROR: Cassandra Cluster RUN timeout. Check STATUS."
-    #fi 
+    echo "Please, be patient. It may take a while until it shows a correct STATUS (and it may show some harmless errors during this process)."
+    RETRY_COUNTER=0
+    sleep 15
+    get_cluster_node
+    get_dc_status
+    while [ "$NODE_COUNTER_1" != "$N_NODES" ] || [ "$NODE_COUNTER_2" -lt "$DC2_N_HOSTS" ] &&  [[ "$RETRY_COUNTER" -lt "$RETRY_MAX" ]] 
+    do
+        echo "Checking..."
+        sleep 20
+    	get_dc_status
+    done
+    if [ "$RETRY_COUNTER" == "$RETRY_MAX" ]
+    then
+        echo "ERROR: Cassandra MultiDC cluster RUN timeout. Check STATUS."
+    else
+        echo "Cassandra cluster DC1 with "$N_NODES" nodes and cluster DC2 with "$DC2_N_HOSTS" started successfully."
+    fi
+    exit 
 elif [ "$ACTION" == "STATUS" ] || [ "$ACTION" == "status" ]
 then
     if [ "$OPTION" != "" ]
