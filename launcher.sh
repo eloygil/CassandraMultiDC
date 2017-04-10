@@ -13,7 +13,7 @@ HOST_LIST=/tmp/cassandradc-host-list.txt
 N_NODES_FILE=cassandradc-num-nodes.txt
 RECOVER_FILE=cassandradc-recover-file.txt
 JOB_DB_FILE=jobs.db
-RETRY_MAX=12
+RETRY_MAX=10
 #DC2_N_HOSTS=4 #Hardcoded
 DC2_N_HOSTS=2 #while testing
 
@@ -218,6 +218,7 @@ then
     do
         echo "Checking..."
         sleep 20
+        RETRY_COUNTER=$(($RETRY_COUNTER+1))
     	get_dc_status
     done
     if [ "$RETRY_COUNTER" == "$RETRY_MAX" ]
