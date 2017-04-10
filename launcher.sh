@@ -189,15 +189,15 @@ then
 
     echo "Please, be patient. It may take a while until it shows a correct STATUS (and it may show some harmless errors during this process)."
     RETRY_COUNTER=0
-    sleep 15
+    sleep 12
     get_cluster_node
-    get_dc_status
-    while [ "$NODE_COUNTER_1" != "$N_NODES" ] || [ "$NODE_COUNTER_2" -lt "$DC2_N_HOSTS" ] &&  [[ "$RETRY_COUNTER" -lt "$RETRY_MAX" ]] 
+    CLUSTER_READY=""
+    while [ "$CLUSTER_READY" != "OK" ] && [ "$RETRY_COUNTER" -lt "$RETRY_MAX" ] 
     do
-        echo "Checking..."
+        echo "Checking status, p0lease wait..."
         sleep 20
         RETRY_COUNTER=$(($RETRY_COUNTER+1))
-    	get_dc_status
+    	CLUSTER_READY=$(bash launcher.sh STATUS $JOBNAME | head -n 1 | awk '{ print $NF }')
     done
     if [ "$RETRY_COUNTER" == "$RETRY_MAX" ]
     then
