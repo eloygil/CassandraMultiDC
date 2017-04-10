@@ -27,8 +27,8 @@ function usage () {
     echo "       Starts two new Cassandra Clusters. For the DC1 it starts N nodes, if given. Default value is 4."
     echo "       If a job name is specified with the -j parameter it will have that name, otherwise a random job name is generated."
     echo " "
-    echo "       STATUS:"
-    echo "       Gets the status of the Cassandra Cluster(s)."
+    echo "       STATUS [ jobname ]"
+    echo "       Gets the status of the Cassandra Cluster with that job name, if given, otherwise it shows a list of running jobs."
     echo " "
     echo "       KILL [ jobname ]:"
     echo "       Kills the clusters associated with that job name, if given, else shows a list of running jobs."
@@ -43,7 +43,7 @@ function get_running_clusters () {
         if [ "$(echo $line | cut -c -3)" == "RUN" ] && [ "$(echo $line | cut -c 4)" == "1" ]  # Filtering to get RUNNING and DC1
         then
             RUN_JOBID=$(echo $line | cut -c 5-)
-            if [ "$(echo $BJOBS | grep "RUN2"$RUN_JOBID)" != "" ] && [ "$(cat $JOB_DB_FILE | grep $RUN_JOBID | sed 's/ //g')" == "$RUN_JOBID" ]      # Its DC2 is RUN & in jobs.db
+            if [ "$(echo $BJOBS | grep "RUN2"$RUN_JOBID)" != "" ] && [ "$(cat $JOB_DB_FILE | grep $RUN_JOBID | awk '{ print $1 }' | sed 's/ //g')" == "$RUN_JOBID" ]      # Its DC2 is RUN & in jobs.db
             then
                 RUNNING_JOBS="$RUNNING_JOBS $RUN_JOBID"                     # Adding JOB ID to the Cassandra running jobs list
             fi
@@ -51,6 +51,7 @@ function get_running_clusters () {
     done
     if [ "$RUNNING_JOBS" != "" ]
     then
+        echo "Showing all the running Cassandra Multi-Datacenter clusters:"
         for job in $RUNNING_JOBS
         do
             echo " "
@@ -65,21 +66,22 @@ function get_running_clusters () {
             echo " "
         done
     else
-        echo "No running jobs related with DC1/DC2 Cassandra clusters found"
+        echo "No running jobs related with DC1/DC2 Cassandra clusters found."
         bjobs
     fi
 }
 
 function get_job_info () {
-    # Gets the ID of the job that runs the Cassandra Cluster
-    JOB_INFO=$(bjobs | grep $JOBNAME) 
-    JOB_ID=$(echo $JOB_INFO | awk '{ print $1 }')
-    JOB_STATUS=$(echo $JOB_INFO | awk '{ print $3 }')   
+    # Gets the status of the jobs that are responsible of the given Cassandra cluster Job ID
+    JOB_ID_1=$(bjobs | grep $OPTION | head -n 1 | awk '{ print $1 }') 
+    JOB_ID_2=$(bjobs | grep $OPTION | tail -n 1 | awk '{ print $1 }') 
+    JOB_STATUS_1=$(bjobs | grep $OPTION | head -n 1 | awk '{ print $3 }') 
+    JOB_STATUS_2=$(bjobs | grep $OPTION | tail -n 1 | awk '{ print $3 }') 
 }
 
 function get_cluster_node () {
     # Gets the ID of the first node
-    NODE_ID=$(bjobs | grep $JOBNAME | awk '{ print $6 }' | tail -c 9)
+    NODE_ID=$(bjobs | grep $OPTION | head -n 1 | awk '{ print $6 }' | tail -c 9)
 }
 
 function get_cluster_ips () {
@@ -96,7 +98,7 @@ function exit_no_cluster () {
 function exit_bad_node_status () {
     # Exit after getting a bad node status. 
     echo "Cassandra Cluster Status: ERROR"
-    echo "One or more nodes are not up (yet?) - It was expected to find ""$(cat $N_NODES_FILE)"" UP nodes."
+    echo "One or more nodes are not up (yet?)"
     #$CASS_HOME/bin/nodetool -h $NODE_ID status
     echo "Exiting..."
     exit
@@ -176,6 +178,39 @@ function set_run_parameters() {
     fi
 }
 
+function get_dc_status () {
+    NODE_STATE_LIST=`$CASS_HOME/bin/nodetool -h $NODE_ID status | grep ack | awk '{ print $1 }'`
+    SWITCH_STATUS="ON"
+    if [ "$NODE_STATE_LIST" == "" ]
+    then
+        echo "ERROR: No status found. The Cassandra Cluster may be still bootstrapping. Try again later."
+        exit
+    fi
+    NODE_COUNTER_1=0
+    NODE_COUNTER_2=0
+    for state in $NODE_STATE_LIST
+    do
+        if [ "$state" == "--" ]
+        then
+            if [ "$SWITCH_STATUS" == "ON" ]; then
+                SWITCH_STATUS="OFF"
+            elif [ "$SWITCH_STATUS" == "OFF" ]; then
+                SWITCH_STATUS="ON"
+            fi
+        elif [ "$state" != "UN" ]
+        then
+            echo "E1"
+            exit_bad_node_status
+        elif [ "$SWITCH_STATUS" == "OFF" ]
+        then
+            NODE_COUNTER_1=$(($NODE_COUNTER_1+1))
+        elif [ "$SWITCH_STATUS" == "ON" ]
+        then
+            NODE_COUNTER_2=$(($NODE_COUNTER_2+1))
+        fi
+    done
+}
+
 if [ "$ACTION" == "TEST" ] || [ "$ACTION" == "test" ]
 then
     get_running_clusters
@@ -198,9 +233,9 @@ then
     # Creating logs directory, if not exists
     mkdir -p $HOME/cassandraDC4juron/logs
 
-    # Adding job to job database
-    echo " $JOBNAME" >> $JOB_DB_FILE
-
+    # Adding jobname and details to job database
+    echo " $JOBNAME $N_NODES $DC2_N_HOSTS" >> $JOB_DB_FILE
+ 
     # Launching job for Datacenter1 (over SSD)
     bsub -J "1$JOBNAME" -n $((19 * $N_NODES)) -W 20 -R span[ptile=19] -oo logs/$JOBNAME-DC1-%J.out -eo logs/$JOBNAME-DC1-%J.err "bash cass.sh $JOBNAME 1 $N_NODES"
     # Launching job for Datacenter2 (over GPFS)
@@ -222,49 +257,46 @@ then
     #fi 
 elif [ "$ACTION" == "STATUS" ] || [ "$ACTION" == "status" ]
 then
-    # If there is a running Cassandra Cluster it prints the information of the nodes
-    get_job_info
-    if [ "$JOB_ID" != "" ]
+    if [ "$OPTION" != "" ]
     then
-    	if [ "$JOB_STATUS" == "PEND" ]
+        # If a Cassandra Cluster jobname is given and alive, it prints the information of the nodes
+        get_job_info
+        if [ "$JOB_ID_1" != "" ]
         then
-            echo "The job is still pending. Wait for a while and try again."
-            exit
-        fi 
-        get_cluster_node 
-        NODE_STATE_LIST=`$CASS_HOME/bin/nodetool -h $NODE_ID status | sed 1,5d | sed '$ d' | awk '{ print $1 }'`
-	if [ "$NODE_STATE_LIST" == "" ]
-	then
-            echo "ERROR: No status found. The Cassandra Cluster may be still bootstrapping. Try again later."
-            exit
-        fi
-        NODE_COUNTER=0
-        for state in $NODE_STATE_LIST
-        do
-            if [ $state != "UN" ]
+            if [ "$JOB_STATUS_1" == "PEND" ] || [ "$JOB_STATUS_2" == "PEND" ]
             then
-                echo "E1"
-                exit_bad_node_status
+                echo "There is at least a job that is still pending. Wait for a minute and try again."
+                exit
+            fi 
+            get_cluster_node
+            get_dc_status
+            N_DC1_DB=$(cat $JOB_DB_FILE | grep $OPTION | awk '{ print $2 }')
+            N_DC2_DB=$(cat $JOB_DB_FILE | grep $OPTION | awk '{ print $3 }')
+            if [ "$N_DC1_DB" == "$NODE_COUNTER_1" ] && [ "$N_DC2_DB" == "$NODE_COUNTER_2" ]
+            then
+                echo "Cassandra Multi-Datacenter cluster <"$OPTION"> Status: OK"
+       	        $CASS_HOME/bin/nodetool -h $NODE_ID status
             else
-                NODE_COUNTER=$(($NODE_COUNTER+1))
+                echo "E2"
+                echo "Cassandra Multi-Datacenter cluster <"$OPTION"> Status: ERROR"
+                echo "N_DC1_DB: "$N_DC1_DB
+                echo "NODE_COUNTER_1: "$NODE_COUNTER_1
+                echo "N_DC2_DB: "$N_DC2_DB
+                echo "NODE_COUNTER_2: "$NODE_COUNTER_2
+                exit_bad_node_status
             fi
-       	done
-        if [ "$(cat $N_NODES_FILE)" == "$NODE_COUNTER" ]
-        then
-            echo "Cassandra Cluster Status: OK"
-       	    $CASS_HOME/bin/nodetool -h $NODE_ID status
         else
-            echo "E2"
-            echo "N_NODES_FILE: "$(cat $N_NODES_FILE)
-            echo "NODE_COUNTER: "$NODE_COUNTER
-            exit_bad_node_status
+            exit_no_cluster
         fi
     else
-        exit_no_cluster
+        # Otherwise, it shows all the alive Cassandra Clusters, if they exist.
+        echo "INFO: No ID given, therefore the cluster consistency check is DISABLED."
+        get_running_clusters
+        exit
     fi
 elif [ "$ACTION" == "KILL" ] || [ "$ACTION" == "kill" ]
 then
-    # If there is a running Cassandra Cluster it kills it
+    # If there is a running Cassandra Cluster with the given Job ID it kills it, otherwise it shows a list of running clusters
     get_job_info
     if [ "$JOB_ID" != "" ]
     then
