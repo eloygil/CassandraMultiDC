@@ -9,13 +9,10 @@ OPTION=${2}
 JOBNAME=${3}
 N_NODES=${4}
 CASS_HOME=$HOME/cassandra-dc
-HOST_LIST=/tmp/cassandradc-host-list.txt
-N_NODES_FILE=cassandradc-num-nodes.txt
-RECOVER_FILE=cassandradc-recover-file.txt
 JOB_DB_FILE=jobs.db
 RETRY_MAX=10
 #DC2_N_HOSTS=4 #Hardcoded
-DC2_N_HOSTS=2 #while testing
+DC2_N_HOSTS=2 #limited to 2 while testing
 
 function usage () {
     # Prints a help message
