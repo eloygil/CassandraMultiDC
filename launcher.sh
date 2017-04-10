@@ -84,11 +84,6 @@ function get_cluster_node () {
     NODE_ID=$(bjobs | grep $OPTION | head -n 1 | awk '{ print $6 }' | tail -c 9)
 }
 
-function get_cluster_ips () {
-    # Gets the IP of every node in the cluster
-    NODE_IPS=$($CASS_HOME/bin/nodetool -h $NODE_ID status | awk '/Address/{p=1;next}{if(p){print $2}}')
-}
-
 function exit_no_cluster () {
     # Any Cassandra cluster is running. Exit.
     echo "There is not a Cassandra cluster named <"$OPTION"> running. Exiting..."
@@ -102,16 +97,6 @@ function exit_bad_node_status () {
     #$CASS_HOME/bin/nodetool -h $NODE_ID status
     echo "Exiting..."
     exit
-}
-
-function test_if_cluster_up () {
-    # Checks if other Cassandra Cluster is running, aborting if it is happening
-    if [ "$(bjobs | grep cassandra)" != "" ] && [ "$(bjobs | grep cassandra)" != "No unfinished job found" ] 
-    then
-        echo "Another Cassandra Cluster is running and could collide with a new execution. Aborting..."
-        bjobs
-        exit
-    fi
 }
 
 function set_run_parameters() {
@@ -190,13 +175,9 @@ function get_dc_status () {
 if [ "$ACTION" == "RUN" ] || [ "$ACTION" == "run" ]
 then
     set_run_parameters
-    #test_if_cluster_up
     # Starts a Cassandra Clusters
     echo "Starting Cassandra Clusters (Job ID: "$JOBNAME")"
-
     echo "#DC1 nodes: "$N_NODES "| #DC2 nodes: "$DC2_N_HOSTS
-    # Since this is a fresh launch, it assures that the recover file is empty
-    #echo "" > $RECOVER_FILE
 
     # Creating logs directory, if not exists
     mkdir -p $HOME/cassandraDC4juron/logs
