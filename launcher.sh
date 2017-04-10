@@ -19,13 +19,13 @@ DC2_N_HOSTS=2 #while testing
 
 function usage () {
     # Prints a help message
-    echo "Usage: bash launcher.sh [ -h | RUN [ -j jobname ] [ N ] | STATUS | KILL ]"
+    echo "Usage: bash launcher.sh [ -h | RUN [ -j jobname ] [ N ] | STATUS [ jobname ] | KILL [ jobname ] ]"
     echo "       -h:"
     echo "       Prints this usage help."
     echo " "
-    echo "       RUN [ jobname ] [ N ]:"
+    echo "       RUN [ -j jobname ] [ N ]:"
     echo "       Starts two new Cassandra Clusters. For the DC1 it starts N nodes, if given. Default value is 4."
-    echo "       If a job name is specified with the -j parameter it will have that name, otherwise a random job name is generated."
+    echo "       If a job name is specified with the -j parameter it will have that name (not implemented), otherwise a random job name is generated."
     echo " "
     echo "       STATUS [ jobname ]"
     echo "       Gets the status of the Cassandra Cluster with that job name, if given, otherwise it shows a list of running jobs."
