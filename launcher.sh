@@ -137,7 +137,7 @@ function set_run_parameters() {
 function get_dc_status () {
     NODE_STATE_LIST=`$CASS_HOME/bin/nodetool -h $NODE_ID status | grep ack | awk '{ print $1 }'`
     SWITCH_STATUS="ON"
-    if [ "$NODE_STATE_LIST" == "" ] && [ "$ACTION" != "RUN" ]
+    if [ "$NODE_STATE_LIST" == "" ]
     then
         echo "ERROR: No status found. The Cassandra Cluster may be still bootstrapping. Try again later."
         exit
@@ -155,10 +155,8 @@ function get_dc_status () {
             fi
         elif [ "$state" != "UN" ]
         then
-            if [ "$ACTION" != "RUN" ]; then
-                echo "E1"
-                exit_bad_node_status
-            fi
+            echo "E1"
+            exit_bad_node_status
         elif [ "$SWITCH_STATUS" == "OFF" ]
         then
             NODE_COUNTER_1=$(($NODE_COUNTER_1+1))
@@ -194,7 +192,7 @@ then
     CLUSTER_READY=""
     while [ "$CLUSTER_READY" != "OK" ] && [ "$RETRY_COUNTER" -lt "$RETRY_MAX" ] 
     do
-        echo "Checking status, p0lease wait..."
+        echo "Checking status, please wait..."
         sleep 20
         RETRY_COUNTER=$(($RETRY_COUNTER+1))
     	CLUSTER_READY=$(bash launcher.sh STATUS $JOBNAME | head -n 1 | awk '{ print $NF }')
