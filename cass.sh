@@ -1,20 +1,13 @@
 #!/bin/bash
 iface="ib0" # still unused, it will be received as argument and change the seeds and interface used in conf/cassandra.yaml
-
+ulimit -c 0 
 JOBNAME=${1}
 DC=${2}
 N_NODES=${3}
-
+DC2_N_NODES=${4} # If DC=2 this is ignored
 CASS_HOME=$HOME/cassandra-dc
 SEEDS_FILE_DC1=seeds/$JOBNAME-1.txt
 SEEDS_FILE_DC2=seeds/$JOBNAME-2.txt
-
-DATA_HOME=/tmp/cassandra-data-tmp-e
-COMM_HOME=/tmp/cassandra-commitlog
-HOST_LIST=/tmp/cassandra-host-list.txt
-N_NODES_FILE=cassandra-num-nodes.txt
-SNAPSHOT_FILE=cassandra-snapshot-file.txt
-RECOVER_FILE=cassandra-recover-file.txt
 RETRY_MAX=20
 
 function exit_killjob () {
@@ -28,6 +21,39 @@ function exit_bad_node_status () {
     echo "It was expected to find ""$(cat $N_NODES_FILE)"" UP nodes, found "$NODE_COUNTER"."
     echo "Exiting..."
     exit_killjob
+}
+
+function get_dc_status () {
+    NODE_STATE_LIST=`$CASS_HOME/bin/nodetool status | grep ack | awk '{ print $1 }'`
+    SWITCH_STATUS="ON"
+    if [ "$NODE_STATE_LIST" == "" ]
+    then
+        echo "ERROR: No status found. The Cassandra Cluster may be still bootstrapping. Try again later."
+        exit
+    fi  
+    NODE_COUNTER_1=0
+    NODE_COUNTER_2=0
+    for state in $NODE_STATE_LIST
+    do  
+        if [ "$state" == "--" ]
+        then
+            if [ "$SWITCH_STATUS" == "ON" ]; then
+                SWITCH_STATUS="OFF"
+            elif [ "$SWITCH_STATUS" == "OFF" ]; then
+                SWITCH_STATUS="ON"
+            fi  
+        elif [ "$state" != "UN" ]
+        then
+            echo "E1"
+            exit_bad_node_status
+        elif [ "$SWITCH_STATUS" == "OFF" ]
+        then
+            NODE_COUNTER_1=$(($NODE_COUNTER_1+1))
+        elif [ "$SWITCH_STATUS" == "ON" ]
+        then
+            NODE_COUNTER_2=$(($NODE_COUNTER_2+1))
+        fi  
+    done
 }
 
 function get_nodes_up () {
@@ -95,12 +121,6 @@ do
     # Clearing data from previous executions and checking symlink coherence
     blaunch $u_host "bash $HOME/cassandraDC4juron/dc-set.sh $DC $JOBNAME $CASS_HOME $NODE_COUNT"
 
-    #if [ "$(cat $RECOVER_FILE)" != "" ]
-    #then
-    #    # Moving data to each datapath
-    #    blaunch $u_host "$HOME/cassandra4juron/recover.sh $NODE_COUNT"
-    #fi       
-
     # Launching Cassandra in every node
     echo "Launching in: $u_host"
     blaunch $u_host "$CASS_HOME/bin/cassandra -f" &
@@ -112,26 +132,51 @@ echo "Waiting 20 seconds until all Cassandra nodes are launched..."
 sleep 20
 echo "Checking..."
 RETRY_COUNTER=0
-get_nodes_up
+NODE_COUNTER=0
 while [ "$NODE_COUNTER" != "$N_NODES" ] && [ $RETRY_COUNTER -lt $RETRY_MAX ]; do
     echo "Retry #$RETRY_COUNTER"
-    echo "Checking..."
+    echo "Checking DC$DC status..."
     sleep 10
-    get_nodes_up
+    get_dc_status
+    if [ "$DC" == 1 ]; then
+        NODE_COUNTER=$NODE_COUNTER_1
+    else
+        NODE_COUNTER=$NODE_COUNTER_2
+    fi
     ((RETRY_COUNTER++))
 done
 if [ "$NODE_COUNTER" == "$N_NODES" ]
 then
-    echo "Cassandra Cluster with "$N_NODES" nodes started successfully."
+    echo "Cassandra Cluster DC$DC with "$N_NODES" nodes started successfully."
 else
     echo "ERROR: Cassandra Cluster RUN timeout. Check STATUS."
     exit_bad_node_status
 fi
 
-# THIS IS THE APPLICATION CODE EXECUTING SOME TASKS USING CASSANDRA DATA, ETC
-echo "CHECKING CASSANDRA STATUS: "
-$CASS_HOME/bin/nodetool status
+# If the DC=1 checks the status of the whole system and executes the code of the application
+if [ "$DC" == "1" ]
+then
+    RETRY_COUNTER=0
+    CLUSTER_READY=""
+    while [ "$CLUSTER_READY" != "OK" ] && [ "$RETRY_COUNTER" -lt "$RETRY_MAX" ] 
+    do
+        echo "Checking status, please wait..."
+        sleep 20
+        RETRY_COUNTER=$(($RETRY_COUNTER+1))
+        CLUSTER_READY=$(bash launcher.sh STATUS $JOBNAME | head -n 1 | awk '{ print $NF }')
+    done
+    if [ "$CLUSTER_READY" != "OK" ]
+    then
+        echo "ERROR: Cassandra MultiDC cluster RUN timeout. Check STATUS."
+        exit
+    else
+        echo "Cassandra cluster DC1 with "$N_NODES" nodes and cluster DC2 with "$DC2_N_NODES" nodes started successfully."
+    fi
 
+    # THIS IS THE APPLICATION CODE EXECUTING SOME TASKS USING CASSANDRA DATA, ETC
+    echo "CHECKING CASSANDRA STATUS: "
+    $CASS_HOME/bin/nodetool status
+fi
 #sleep 12
 #firstnode=$(echo $hostlist | awk '{ print $1 }')
 #echo "INSERTING DATA FROM: "$firstnode
@@ -147,16 +192,6 @@ sleep 60
 #    NDT_STATUS=$($CASS_HOME/bin/nodetool status)
 #    sleep 60
 #done
-
-# If an snapshot was ordered, it is done
-#if [ "$(cat $SNAPSHOT_FILE)" == "1" ]
-#then
-#    #BUCLE SOBRE LOS HOSTS
-#    for u_host in $hostlist
-#    do
-#        blaunch $u_host "bash snapshot.sh $$"
-#    done
-#fi
 
 sleep 300
 
