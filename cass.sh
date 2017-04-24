@@ -174,17 +174,99 @@ then
     fi
 
     # THIS IS THE APPLICATION CODE EXECUTING SOME TASKS USING CASSANDRA DATA, ETC
-    echo "CHECKING CASSANDRA STATUS: "
-    $CASS_HOME/bin/nodetool status
-fi
-#sleep 12
-#firstnode=$(echo $hostlist | awk '{ print $1 }')
+#    echo "CHECKING CASSANDRA STATUS: "
+#    $CASS_HOME/bin/nodetool status
+#    sleep 12
+#    firstnode=$(echo $hostlist | awk '{ print $1 }')
+#    echo "INSERTING DATA FROM: "$firstnode
+#    blaunch $firstnode "$CASS_HOME/bin/cqlsh -f $HOME/1dot25GB.cql $firstnode-$iface 9042"
+
+echo "CHECKING CASSANDRA STATUS: "
+$CASS_HOME/bin/nodetool status
+
+sleep 12
+firstnode=$(echo $hostlist | awk '{ print $1 }')
 #echo "INSERTING DATA FROM: "$firstnode
 #blaunch $firstnode "$CASS_HOME/bin/cqlsh -f $HOME/1dot25GB.cql 127.0.0.1 9042"
-# END OF THE APPLICATION EXECUTION CODE
+#N_TESTS=10
+N_TESTS=5
+IT_COUNTER=0
+#N_OP=10000000
+N_OP=1000000
+while [ "$IT_COUNTER" -lt "$N_TESTS" ]; do
+    if [ "$IT_COUNTER" == "0" ] || [ "$(tail -n 1 stress/$TEST_FILENAME)" == "END" ]; then
+        ((IT_COUNTER++))
+        TEST_FILENAME=MD_NN6-3_RL3N-1_1M_WR_SN1_"$IT_COUNTER".log
+        $CASS_HOME/tools/bin/cassandra-stress write n=$N_OP -schema replication\(strategy=NetworkTopologyStrategy, dc1=3, dc2=1\) -node $firstnode-$iface -log file=stress/$TEST_FILENAME
+    fi
+    sleep 10
+done
+
+
+
+
+
+
+    # END OF THE APPLICATION EXECUTION CODE
+fi
 
 # Wait for a couple of minutes to assure that the data is stored
-sleep 60
+#sleep 60
+
+# If it is the 2nd datacenter, does not continue until all the nodes are in a stable status
+if [ "$DC" == "2" ]
+then 
+    TIME1=`date +"%T.%3N"`
+
+    # Looping over the assigned hosts until the stable status is confirmed
+    for u_host in $hostlist
+    do
+        blaunch $u_host "bash sync-check.sh $$"
+    done
+
+    SYNC_CONT=0
+    while [ "$SYNC_CONT" != "$DC2_N_NODES" ]
+    do
+        SYNC_CONT=0
+        for u_host in $hostlist
+        do
+            if [ -f sync-status-$$-$u_host-file.txt ]
+            then
+                SYNC_CONT=$(($SYNC_CONT+1))
+            else
+               break
+            fi
+        done
+    done
+    
+    TIME2=`date +"%T.%3N"`
+    MILL1=$(echo $TIME1 | cut -c 10-12)
+    MILL2=$(echo $TIME2 | cut -c 10-12)
+    TIMESEC1=$(date -d "$TIME1" +%s)
+    TIMESEC2=$(date -d "$TIME2" +%s)
+    TIMESEC=$(( TIMESEC2 - TIMESEC1 ))
+    MILL=$(( MILL2 - MILL1 ))
+
+    # Adjusting seconds if necessary
+    if [ $MILL -lt 0 ] 
+    then
+        MILL=$(( 1000 + MILL ))
+        TIMESEC=$(( TIMESEC - 1 ))
+    fi  
+
+    # Getting minutes if over 56 seconds
+    if [ $TIMESEC -gt 59 ]; then
+        TIMEMIN=$( TIMESEC / 60 )
+        TIMESEC=$(echo $TIMESEC | rev | cut -c -2 | rev)
+        echo "Sync process took: "$TIMEMIN"m. "$TIMESEC"s. "$MILL"ms."
+    else
+        echo "Sync process took: "$TIMESEC"s. "$MILL"ms."
+    fi 
+
+    # Cleaning sync status files
+    rm sync-status-$$-*-file.txt
+fi
+
 
 # Don't continue until the status is stable
 #while [ "$NDT_STATUS" != "$($CASS_HOME/bin/nodetool status)" ]

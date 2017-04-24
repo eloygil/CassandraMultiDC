@@ -12,7 +12,7 @@ CASS_HOME=$HOME/cassandra-dc
 JOB_DB_FILE=jobs.db
 RETRY_MAX=10
 #DC2_N_HOSTS=4 #Hardcoded
-DC2_N_HOSTS=2 #limited to 2 while testing
+DC2_N_HOSTS=3 #limited to 3 while testing
 
 function usage () {
     # Prints a help message
