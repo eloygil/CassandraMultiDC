@@ -4,13 +4,14 @@ JOBNAME="${2}"
 CASS_HOME="${3}"
 NODE_ID="${4}"
 #SSD_MOUNT_POINT=/tmp # This will be replaced by the user's own SSD scratch path assigned
-SSD_MOUNT_POINT=/mnt/nvme0n1p4 # This will be replaced by the user's own SSD scratch path assigned
+SSD_MOUNT_POINT=/mnt/nvme0n1p4/cassandra/ # This will be replaced by the user's own SSD scratch path assigned
 USERNAME=$(whoami)
 STORAGE=""
 DEBUG=1
 
 if [ "$DC" == "1" ]; then
-    STORAGE=$SSD_MOUNT_POINT
+    mkdir -p $SSD_MOUNT_POINT/$USERNAME
+    STORAGE=$SSD_MOUNT_POINT/$USERNAME
 elif [ "$DC" == "2" ]; then
     STORAGE=$CASS_HOME
 fi

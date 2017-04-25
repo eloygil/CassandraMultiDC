@@ -196,7 +196,7 @@ N_OP=1000000
 while [ "$IT_COUNTER" -lt "$N_TESTS" ]; do
     if [ "$IT_COUNTER" == "0" ] || [ "$(tail -n 1 stress/$TEST_FILENAME)" == "END" ]; then
         ((IT_COUNTER++))
-        TEST_FILENAME=MD_NN6-3_RL3N-1_1M_WR_SN1_"$IT_COUNTER".log
+        TEST_FILENAME=MD_NN3-3_RL3N-1_1M_WR_SN1_"$IT_COUNTER".log
         $CASS_HOME/tools/bin/cassandra-stress write n=$N_OP -schema replication\(strategy=NetworkTopologyStrategy, dc1=3, dc2=1\) -node $firstnode-$iface -log file=stress/$TEST_FILENAME
     fi
     sleep 10
@@ -275,7 +275,8 @@ fi
 #    sleep 60
 #done
 
-sleep 300
+#sleep 300
+sleep 60
 
 # Kills the job to shutdown every cassandra service
 #exit_killjob

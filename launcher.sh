@@ -181,7 +181,7 @@ then
     echo " $JOBNAME $N_NODES $DC2_N_HOSTS" >> $JOB_DB_FILE
  
     # Launching job for Datacenter1 (over SSD)
-    bsub -J "1$JOBNAME" -n $((19 * $N_NODES)) -W 20 -R span[ptile=19] -oo logs/$JOBNAME-DC1-%J.out -eo logs/$JOBNAME-DC1-%J.err "bash cass.sh $JOBNAME 1 $N_NODES $DC2_N_HOSTS"
+    bsub -J "1$JOBNAME" -n $((19 * $N_NODES)) -W 20 -R "select[hname!=juronc13]" -R "select[hname!=juronc15]" -R span[ptile=19] -oo logs/$JOBNAME-DC1-%J.out -eo logs/$JOBNAME-DC1-%J.err "bash cass.sh $JOBNAME 1 $N_NODES $DC2_N_HOSTS"
     # Launching job for Datacenter2 (over GPFS)
     bsub -J "2$JOBNAME" -n $((19 * $DC2_N_HOSTS)) -W 20 -R span[ptile=19] -oo logs/$JOBNAME-DC2-%J.out -eo logs/$JOBNAME-DC2-%J.err "bash cass.sh $JOBNAME 2 $DC2_N_HOSTS $DC2_N_HOSTS"
 
