@@ -9,6 +9,8 @@ CASS_HOME=$HOME/cassandra-dc
 SEEDS_FILE_DC1=seeds/$JOBNAME-1.txt
 SEEDS_FILE_DC2=seeds/$JOBNAME-2.txt
 RETRY_MAX=20
+TEST_BASE_FILENAME=MD_NN3-3_RL3N-1_100M_WR_SN1
+#TEST_BASE_FILENAME=Shakespeare
 
 function exit_killjob () {
     # Traditional harakiri
@@ -181,32 +183,26 @@ then
 #    echo "INSERTING DATA FROM: "$firstnode
 #    blaunch $firstnode "$CASS_HOME/bin/cqlsh -f $HOME/1dot25GB.cql $firstnode-$iface 9042"
 
-echo "CHECKING CASSANDRA STATUS: "
-$CASS_HOME/bin/nodetool status
+    echo "CHECKING CASSANDRA STATUS: "
+    $CASS_HOME/bin/nodetool status
 
-sleep 12
-firstnode=$(echo $hostlist | awk '{ print $1 }')
-#echo "INSERTING DATA FROM: "$firstnode
-#blaunch $firstnode "$CASS_HOME/bin/cqlsh -f $HOME/1dot25GB.cql 127.0.0.1 9042"
-#N_TESTS=10
-N_TESTS=5
-IT_COUNTER=0
-#N_OP=10000000
-N_OP=1000000
-while [ "$IT_COUNTER" -lt "$N_TESTS" ]; do
-    if [ "$IT_COUNTER" == "0" ] || [ "$(tail -n 1 stress/$TEST_FILENAME)" == "END" ]; then
-        ((IT_COUNTER++))
-        TEST_FILENAME=MD_NN3-3_RL3N-1_1M_WR_SN1_"$IT_COUNTER".log
-        $CASS_HOME/tools/bin/cassandra-stress write n=$N_OP -schema replication\(strategy=NetworkTopologyStrategy, dc1=3, dc2=1\) -node $firstnode-$iface -log file=stress/$TEST_FILENAME
-    fi
-    sleep 10
-done
-
-
-
-
-
-
+    sleep 12
+    firstnode=$(echo $hostlist | awk '{ print $1 }')
+#    echo "INSERTING DATA FROM: "$firstnode
+#    blaunch $firstnode "$CASS_HOME/bin/cqlsh -f $HOME/10GB.cql $firstnode-$iface 9042"
+    N_TESTS=10
+    IT_COUNTER=0
+    #N_OP=10000000
+    N_OP=100000000
+    while [ "$IT_COUNTER" -lt "$N_TESTS" ]; do
+        if [ "$IT_COUNTER" == "0" ] || [ "$(tail -n 1 stress/$TEST_FILENAME)" == "END" ]; then
+            ((IT_COUNTER++))
+            TEST_FILENAME="$TEST_BASE_FILENAME"_"$IT_COUNTER".log
+            $CASS_HOME/tools/bin/cassandra-stress write n=$N_OP -schema replication\(strategy=NetworkTopologyStrategy, dc1=3, dc2=1\) -node $firstnode-$iface -log file=stress/$TEST_FILENAME
+        fi
+        sleep 10
+    done
+    echo "DONE" > $JOBNAME-finished.txt
     # END OF THE APPLICATION EXECUTION CODE
 fi
 
@@ -215,15 +211,20 @@ fi
 
 # If it is the 2nd datacenter, does not continue until all the nodes are in a stable status
 if [ "$DC" == "2" ]
-then 
+then
+    # Wait actively until DC1 finishes the application execution
+    while [ ! -f $JOBNAME-finished.txt ]; do
+       LOOP="ACTIVE WAIT"
+    done
+ 
     TIME1=`date +"%T.%3N"`
-
-    # Looping over the assigned hosts until the stable status is confirmed
+    # Looping over the assigned hosts until the stable status is confirmed in DC2
     for u_host in $hostlist
     do
         blaunch $u_host "bash sync-check.sh $$"
     done
 
+    echo "DC2: Waiting until it is synchronized with DC1..."
     SYNC_CONT=0
     while [ "$SYNC_CONT" != "$DC2_N_NODES" ]
     do
@@ -232,7 +233,7 @@ then
         do
             if [ -f sync-status-$$-$u_host-file.txt ]
             then
-                SYNC_CONT=$(($SYNC_CONT+1))
+                ((SYNC_CONT++))
             else
                break
             fi
@@ -254,17 +255,19 @@ then
         TIMESEC=$(( TIMESEC - 1 ))
     fi  
 
-    # Getting minutes if over 56 seconds
-    if [ $TIMESEC -gt 59 ]; then
-        TIMEMIN=$( TIMESEC / 60 )
-        TIMESEC=$(echo $TIMESEC | rev | cut -c -2 | rev)
-        echo "Sync process took: "$TIMEMIN"m. "$TIMESEC"s. "$MILL"ms."
-    else
+    # Getting minutes if over 59 seconds
+    #if [ $TIMESEC -gt 59 ]; then
+    #    TIMEMIN=$( TIMESEC / 60 )
+    #    TIMESEC=$(echo $TIMESEC | rev | cut -c -2 | rev)
+    #    echo "Sync process took: "$TIMEMIN"m. "$TIMESEC"s. "$MILL"ms."
+    #else
         echo "Sync process took: "$TIMESEC"s. "$MILL"ms."
-    fi 
+        echo "Sync process took: "$TIMESEC"s. "$MILL"ms." > stress/"$TEST_BASE_FILENAME"_0.log
+    #fi 
 
     # Cleaning sync status files
     rm sync-status-$$-*-file.txt
+    rm $JOBNAME-finished.txt
 fi
 
 
