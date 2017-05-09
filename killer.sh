@@ -1,0 +1,1 @@
+../cassandra4juron/killer.sh
