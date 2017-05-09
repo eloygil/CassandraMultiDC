@@ -9,7 +9,7 @@ CASS_HOME=$HOME/cassandra-dc
 SEEDS_FILE_DC1=seeds/$JOBNAME-1.txt
 SEEDS_FILE_DC2=seeds/$JOBNAME-2.txt
 RETRY_MAX=20
-TEST_BASE_FILENAME=MD_NN3-3_RL3N-1_100M_WR_SN1
+TEST_BASE_FILENAME=MD_NN3-3_RL3N-1_200M_WR_SN1
 #TEST_BASE_FILENAME=Shakespeare
 
 function exit_killjob () {
@@ -193,7 +193,7 @@ then
     N_TESTS=10
     IT_COUNTER=0
     #N_OP=10000000
-    N_OP=100000000
+    N_OP=200000000
     while [ "$IT_COUNTER" -lt "$N_TESTS" ]; do
         if [ "$IT_COUNTER" == "0" ] || [ "$(tail -n 1 stress/$TEST_FILENAME)" == "END" ]; then
             ((IT_COUNTER++))
@@ -281,5 +281,11 @@ fi
 #sleep 300
 sleep 60
 
-# Kills the job to shutdown every cassandra service
+# Kills each Cassandra job in every node
+for u_host in $hostlist
+do
+    blaunch $u_host "bash killer.sh"
+done
+
+# Kills the job to shutdown
 #exit_killjob
