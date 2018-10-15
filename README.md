@@ -1,2 +1,2 @@
-# cassandraDC4juron
-Cassandra with replication datacenter over GPFS for Juron
+# cassandra multi-DC
+Cassandra with replication data centre over GPFS
